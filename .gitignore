@@ -41,8 +41,8 @@ yarn-error.log*
 Thumbs.db
 
 # Project Specific
-data/processed/
-data/raw/
+# data/processed/
+# data/raw/
 models/
 docs/site/
 *.txt

@@ -184,7 +184,7 @@ Output strictly in JSON format with the following structure:
 
 Ensure questions are diverse and cover key concepts from the context.
 """
-        raw_response = pipeline.llm.generate(prompt)
+        raw_response = pipeline.generate_text(prompt)
         
         # Clean response if LLM adds markdown blocks
         clean_json = raw_response.strip()
@@ -235,7 +235,7 @@ async def generate_mission(request: MissionRequest):
         }}
         """
         
-        raw_response = pipeline.llm.generate(prompt)
+        raw_response = pipeline.generate_text(prompt)
         
         # Clean response
         clean_json = raw_response.strip()

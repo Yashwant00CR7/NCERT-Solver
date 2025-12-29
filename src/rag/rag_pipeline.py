@@ -7,22 +7,42 @@ class RAGPipeline:
         self.vector_store = VectorStoreManager()
         
         # Priority: Ollama -> Gemini -> Local
+        self.llms = []
+        
         ollama_model = os.getenv("OLLAMA_MODEL")
         if ollama_model:
-            print(f"Using Ollama ({ollama_model}) for LLM generation.")
             from src.rag.ollama_llm import OllamaLLM
-            self.llm = OllamaLLM(model_name=ollama_model)
-        else:
-            google_api_key = os.getenv("GOOGLE_API_KEY")
-            if google_api_key:
-                print("Using Gemini API for LLM generation.")
-                from src.rag.gemini_llm import GeminiLLM
-                self.llm = GeminiLLM()
-            else:
-                print("GOOGLE_API_KEY not found. Falling back to local OpenVINO LLM.")
-                from src.rag.local_llm import LocalLLM
-                self.llm = LocalLLM()
+            self.llms.append(OllamaLLM(model_name=ollama_model))
+            print(f"Ollama ({ollama_model}) added to pipeline.")
+
+        google_api_key = os.getenv("GOOGLE_API_KEY")
+        if google_api_key:
+            from src.rag.gemini_llm import GeminiLLM
+            self.llms.append(GeminiLLM())
+            print("Gemini API added to pipeline.")
+
+        # Always add local as ultra-fallback if nothing else works
+        try:
+            from src.rag.local_llm import LocalLLM
+            self.llms.append(LocalLLM())
+            print("Local LLM added as fallback.")
+        except Exception as e:
+            print(f"Could not initialize local LLM: {e}")
         
+    def generate_text(self, prompt):
+        """
+        Helper to generate text using the available LLM chain with full fallback.
+        """
+        for llm in self.llms:
+            try:
+                response = llm.generate(prompt)
+                print(f"Text generated using {llm.__class__.__name__}.")
+                return response
+            except Exception as e:
+                print(f"Provider {llm.__class__.__name__} failed: {e}. Trying fallback...")
+                continue
+        return "I am sorry, but all my AI brains are currently offline."
+
     def generate_response(self, query, grade=None, subject=None, filename=None):
         """
         Full RAG flow: Retrieve -> Augment -> Generate
@@ -59,7 +79,7 @@ class RAGPipeline:
         
         # 4. Generation
         print("Brain is thinking (Generating response)...")
-        response_text = self.llm.generate(prompt)
+        response_text = self.generate_text(prompt)
         print("Response generated.")
         
         # 5. Citations
@@ -79,19 +99,29 @@ class RAGPipeline:
         }
 
     def _build_prompt(self, query, context, lang):
-        if lang == "hi":
-            return f"""आप एक सहायक एआई हैं। नीचे दिए गए संदर्भ का उपयोग करके छात्र के प्रश्न का उत्तर दें। 
-यदि उत्तर संदर्भ में नहीं है, तो कहें "मुझे नहीं पता"।
+        # Map detected language codes to full names for better LLM instruction
+        lang_map = {
+            "hi": "Hindi",
+            "ta": "Tamil",
+            "te": "Telugu",
+            "kn": "Kannada",
+            "ml": "Malayalam",
+            "bn": "Bengali",
+            "mr": "Marathi",
+            "gu": "Gujarati",
+            "pa": "Punjabi"
+        }
+        
+        target_lang = lang_map.get(lang, "the same language as the question")
+        
+        return f"""You are an elite academic assistant specializing in the NCERT curriculum. 
+Answer the student's question using ONLY the provided context. 
 
-संदर्भ:
-{context}
-
-प्रश्न: {query}
-उत्तर:"""
-        else:
-            return f"""You are a helpful AI assistant for students. Answer the student's question using only the provided context. 
-If the answer is not in the context, say "I don't know". 
-Always provide a clear and simple explanation suitable for students.
+RULES:
+1. Ground your answer strictly in the provided NCERT context.
+2. Provide a clear, step-by-step explanation suitable for a student.
+3. If the answer is not in the context, say "I don't have this specific information in the current NCERT context."
+4. CRITICAL: You MUST respond in {target_lang}.
 
 Context:
 {context}

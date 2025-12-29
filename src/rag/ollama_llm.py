@@ -19,7 +19,7 @@ class OllamaLLM:
             result = response.json()
             return result.get("response", "Error: No response from Ollama")
         except Exception as e:
-            return f"Error connecting to Ollama: {e}. Make sure Ollama is running and the model '{self.model_name}' is pulled."
+            raise RuntimeError(f"Ollama failure: {e}")
 
 if __name__ == "__main__":
     # Test
