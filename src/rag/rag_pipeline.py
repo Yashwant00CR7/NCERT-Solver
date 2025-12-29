@@ -9,11 +9,17 @@ class RAGPipeline:
         # Priority: Ollama -> Gemini -> Local
         self.llms = []
         
-        ollama_model = os.getenv("OLLAMA_MODEL")
-        if ollama_model:
-            from src.rag.ollama_llm import OllamaLLM
-            self.llms.append(OllamaLLM(model_name=ollama_model))
-            print(f"Ollama ({ollama_model}) added to pipeline.")
+        openrouter_key = os.getenv("OPENROUTER_API_KEY")
+        if openrouter_key:
+             from src.rag.openrouter_llm import OpenRouterLLM
+             self.llms.append(OpenRouterLLM(model_name="qwen/qwen3-4b:free"))
+             print("OpenRouter (qwen/qwen3-4b:free) added to pipeline.")
+
+        # ollama_model = os.getenv("OLLAMA_MODEL")
+        # if ollama_model:
+        #     from src.rag.ollama_llm import OllamaLLM
+        #     self.llms.append(OllamaLLM(model_name=ollama_model))
+        #     print(f"Ollama ({ollama_model}) added to pipeline.")
 
         google_api_key = os.getenv("GOOGLE_API_KEY")
         if google_api_key:

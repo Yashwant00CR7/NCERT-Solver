@@ -13,24 +13,26 @@ An advanced, premium-styled academic assistant powered by **Ollama (Qwen 2.5/3)*
 
 ## 🌟 The Evolution: From "Solver" to "Coach"
 
-The **NCERT AI Solver** has evolved. While it started as a tool to answer textbook questions, it is now an **Academic Coach**. It doesn't just clear doubts; it analyzes your learning patterns to set daily missions, tracks your commitment, and visualizes your path to mastery.
+The **NCERT AI Solver** has evolved. While it started as a tool to answer textbook questions, it is now an **Academic Coach**. It doesn't just clear doubts; it analyzes your learning patterns to set daily missions, tracks your commitment, creates visual mind maps, and visualizes your path to mastery.
 
 ---
 
 ## 💡 The "Intelligence Layer" Architecture
 
-Our architecture is now **LLM-Native**, using a sophisticated agentic loop to personalize every interaction. It supports **high-fidelity multilingual intelligence** for regional Indian languages (Hindi, Tamil, etc.).
+Our architecture is now **LLM-Native**, using a sophisticated agentic loop to personalize every interaction. It supports **high-fidelity multilingual intelligence** for regional Indian languages (Hindi, Tamil, etc.) and preserves context across sessions.
 
 ```mermaid
 graph TD
     A[NCERT Digital Library] -->|RAG Retrieval| B(AI Solver)
     C[User Engagement Data] -->|Real-time Feed| D{AI Intelligence Layer}
     D -->|Ollama / Qwen| E[Daily AI Missions]
+    D -->|Visual Gen| I[Mind Maps & Diagrams]
     D -->|Weighted Logic| F[Readiness Score]
     E -->|Interactive Task| G[Student Dashboard]
     F -->|Visual Progress| G
     B -->|Citations| G
-    G -->|Activity Log| H[Firebase Firestore]
+    I -->|Mermaid Script| G
+    G -->|Activity Log & Chats| H[Firebase Firestore]
     H -->|Feedback Loop| D
 ```
 
@@ -38,33 +40,39 @@ graph TD
 
 ## ✨ Premium Features
 
-### 🎯 **The Daily AI Mission**
-Using **Ollama (Qwen)**, the app analyzes your subject mastery scores every morning. If your Science score is low, the AI creates a dedicated mission: *"Mission: Master Thermodynamics"* with real XP rewards.
+### 🧠 **Persistent "Second Brain"**
+- **Contextual Chat History**: Your conversations are saved automatically, segregated by **Subject** (e.g., "Economics") or **Specific Chapter**. Pick up exactly where you left off.
+- **Smart Context Clearing**: Easily wipe history for a specific topic when you want a fresh start, without losing your global progress.
 
-### 🧠 **Intelligent Readiness Score**
-A transparent, multi-dimensional metric that calculates your exam readiness based on:
-- **Foundational Mastery** (Base 60%)
-- **Lesson Completion** (+5% per module)
-- **Active Engagement** (+1% per doubt solved)
-- **Diagnostic Validation** (+2% per quiz score)
+### 🌐 **Mastery Mind Maps**
+- **Visual Learning**: instantly transform complex chapter text into interactive, hierarchical Mind Maps.
+- **Interactive Controls**: Zoom, pan, and explore large concept trees.
+- **Auto-Save Gallery**: Every generated map is saved to your profile, building a personal library of visual revision notes.
+
+### 🎯 **The Daily AI Mission**
+Using **Ollama (Qwen)**, the app analyzes your subject mastery scores every morning. If your Science score is low, the AI creates a dedicated mission: *"Mission: Master Thermodynamics"* with real XP rewards. Now cached locally to provide a consistent daily goal.
+
+### 🧐 **Visual Problem Solving**
+- **Image-to-Solution**: Upload a photo of a textbook problem or diagram. The Vision AI extracts the text/geometry and uses RAG to find the exact concept and solution in your library.
 
 ### ✅ **Diagnostic Hub (Assess)**
 Move beyond just reading. Generate instant:
 - **AI Flashcards**: For rapid-fire revision of complex terms.
 - **Interactive Quizzes**: Multiple-choice assessments generated directly from textbook context with instant scoring.
+- **Progress Tracking**: Every quiz score is saved, contributing to your overall "Readiness Score."
 
 ### 🏠 **Personalized Home Hub**
+- **Splintered Disciplines**: Social Sciences are now intelligently categorized into **Geography**, **History**, **Economics**, and **Politics** for focused study.
 - **Study Personas**: Identify as an *Architect*, *Sprinter*, or *Analyst* with custom UI branding.
 - **Radial Commitment Tracker**: Visualize your daily study minutes against your set goals.
-- **Subject Mastery Grid**: High-fidelity cards with glowing progress bars and descriptive icons for every subject.
 
 ---
 
 ## 🛠️ Tech Stack
 
-- **Frontend**: React 18 (Vite), Framer Motion (High-Fidelity Animations), Tailwind CSS v4.
+- **Frontend**: React 18 (Vite), Framer Motion (High-Fidelity Animations), Tailwind CSS v4, Mermaid.s.
 - **Backend**: FastAPI (Python), LangChain (Agentic Orchestration).
-- **Primary Intelligence**: Ollama (Local LLM: Qwen 2.5 / Qwen 3).
+- **Primary Intelligence**: Ollama (Local LLM: Qwen 2.5 / Qwen 1.7b / Qwen 3).
 - **Fallback Intelligence**: Google Gemini 1.5 Pro.
 - **Storage/Auth**: Firebase Firestore & Authentication.
 - **Vector Engine**: Semantic Indexing for NCERT textbooks.
@@ -76,6 +84,7 @@ Move beyond just reading. Generate instant:
 ### 1. Requirements
 - **Ollama** installed and running (`ollama serve`).
 - **Python 3.10+** and **Node.js 18+**.
+- **Firebase Project**: Configured in `.env` (Frontend) and Service Account (Backend if needed).
 
 ### 2. Backend Orchestration
 ```bash

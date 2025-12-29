@@ -52,3 +52,7 @@ docs/site/
 *.swp
 *.bak
 brain/
+*test_model.py
+BRAINSTORMING.md
+test_ollama_model.py
+data/raw/10.zip

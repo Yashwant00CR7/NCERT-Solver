@@ -19,6 +19,19 @@ class GeminiLLM:
         except Exception as e:
             return f"Error generating content with Gemini: {e}"
 
+    def generate_from_image(self, prompt, image_path):
+        """
+        Supports analysis of images (diagrams, math, etc) with a prompt.
+        """
+        try:
+            import PIL.Image
+            img = PIL.Image.open(image_path)
+            # Use 'gemini-1.5-flash' or 'gemini-1.5-pro' for vision
+            response = self.model.generate_content([prompt, img])
+            return response.text
+        except Exception as e:
+            return f"Error in Vision generation: {e}"
+
 if __name__ == "__main__":
     # Test
     # llm = GeminiLLM()

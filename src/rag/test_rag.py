@@ -18,6 +18,14 @@ def main():
         
         print(f"Language: {result['detected_language']}")
         print(f"AI: {result['answer']}")
+        
+        with open("result.txt", "w", encoding="utf-8") as f:
+            f.write(f"Language: {result['detected_language']}\n")
+            f.write(f"AI: {result['answer']}\n")
+            f.write("\nCitations:\n")
+            for cit in result['citations']:
+                f.write(f"- {cit['source']} (Page {cit['page']})\n")
+
         print("\nCitations:")
         for цит in result['citations']:
             print(f"- {цит['source']} (Page {цит['page']})")

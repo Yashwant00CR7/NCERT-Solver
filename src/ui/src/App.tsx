@@ -18,16 +18,23 @@ import {
     Sparkles,
     Zap,
     Trophy,
-    Target
+    Target,
+    Camera,
+    Network,
+    Trash2,
+    X
 } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { logProgress, getStudentOverview, getRecentActivity, auth, logoutUser } from './lib/firebase';
+import { logProgress, getStudentOverview, getRecentActivity, auth, logoutUser, saveChatMessage, getChatHistory, clearChatHistory, saveMindMap, saveAssessmentResult } from './lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import AuthScreen from './components/AuthScreen';
 import OnboardingScreen from './components/OnboardingScreen';
 import ProfileSettings from './components/ProfileSettings';
+import Mermaid from './components/Mermaid';
 
 /** Utility for Tailwind class merging */
 function cn(...inputs: ClassValue[]) {
@@ -117,7 +124,19 @@ const Dashboard = ({ studentId, profile, onSelectChapter }: { studentId: string,
             setStats(overview);
             setRecentActivity(activity);
 
-            // Fetch Daily Mission
+            // Fetch Daily Mission (Check Local Cache First)
+            const today = new Date().toDateString();
+            const cachedMission = localStorage.getItem(`daily_mission_${studentId}`);
+
+            if (cachedMission) {
+                const parsed = JSON.parse(cachedMission);
+                if (parsed.date === today) {
+                    setMission(parsed.data);
+                    setLoading(false);
+                    return; // Skip generation if we have today's mission
+                }
+            }
+
             try {
                 const subjMastery: any = {};
                 ['Science', 'Mathematics', 'English', 'Social Science'].forEach((s, idx) => {
@@ -137,6 +156,12 @@ const Dashboard = ({ studentId, profile, onSelectChapter }: { studentId: string,
                 });
                 const missionData = await res.json();
                 setMission(missionData);
+
+                // Cache it for the rest of the day
+                localStorage.setItem(`daily_mission_${studentId}`, JSON.stringify({
+                    date: today,
+                    data: missionData
+                }));
             } catch (e) {
                 console.error("Mission fetch failed:", e);
             }
@@ -426,30 +451,59 @@ const Solver = ({ activeChapter, setActiveChapter, clearChapter, studentId, libr
     const [isLoading, setIsLoading] = useState(false);
     const [isChapterSelectionOpen, setIsChapterSelectionOpen] = useState(false);
 
+    // Feature States: MindMap & Visual Solve
+    const [isMindMapLoading, setIsMindMapLoading] = useState(false);
+    const [mindmapScript, setMindmapScript] = useState<string | null>(null);
+    const [showMindMap, setShowMindMap] = useState(false);
+    const [selectedImage, setSelectedImage] = useState<File | null>(null);
+
     // Reset when activeChapter changes or when selectedSubject is cleared
     useEffect(() => {
-        if (activeChapter) {
-            setMessages([{
-                role: 'bot',
-                content: `Focus Mode: ${activeChapter.title}. How can I assist you with this specific chapter?`,
-                citations: []
-            } as Message]);
-            setSelectedSubject(activeChapter.subject);
-            setIsChapterSelectionOpen(false);
-        } else if (selectedSubject) {
-            setMessages([{
-                role: 'bot',
-                content: `Subject Mode: ${selectedSubject}. I'm searching across all chapters in this subject. Ask me anything!`,
-                citations: []
-            } as Message]);
-        } else {
-            setMessages([{
-                role: 'bot',
-                content: "Hello! I'm your NCERT assistant. Please select a subject to start a focused study session.",
-                citations: []
-            } as Message]);
-        }
-    }, [activeChapter, selectedSubject]);
+        const loadHistory = async () => {
+            if (activeChapter) {
+                // Load history specific to this chapter
+                const history = await getChatHistory(studentId, activeChapter.subject, activeChapter.title);
+
+                const greeting: Message = {
+                    role: 'bot',
+                    content: `Focus Mode: ${activeChapter.title}. How can I assist you with this specific chapter?`,
+                    citations: []
+                };
+
+                if (history.length > 0) {
+                    setMessages([...history as Message[], greeting]);
+                } else {
+                    setMessages([greeting]);
+                }
+                setSelectedSubject(activeChapter.subject);
+                setIsChapterSelectionOpen(false);
+
+            } else if (selectedSubject) {
+                // Load General subject history (where chapter is 'General' or missing)
+                const history = await getChatHistory(studentId, selectedSubject, 'General');
+
+                const greeting: Message = {
+                    role: 'bot',
+                    content: `Subject Mode: ${selectedSubject}. I'm searching across all chapters in this subject. Ask me anything!`,
+                    citations: []
+                };
+
+                if (history.length > 0) {
+                    setMessages([...history as Message[], greeting]);
+                } else {
+                    setMessages([greeting]);
+                }
+            } else {
+                setMessages([{
+                    role: 'bot',
+                    content: "Hello! I'm your NCERT assistant. Please select a subject to start a focused study session.",
+                    citations: []
+                } as Message]);
+            }
+        };
+
+        loadHistory();
+    }, [activeChapter, selectedSubject, studentId]);
 
     const handleSend = async () => {
         if (!input || isLoading) return;
@@ -458,6 +512,13 @@ const Solver = ({ activeChapter, setActiveChapter, clearChapter, studentId, libr
         setMessages(prev => [...prev, userMsg]);
         setInput('');
         setIsLoading(true);
+
+        const contextData = {
+            subject: selectedSubject || 'General',
+            grade: String(selectedGrade),
+            chapter: activeChapter?.title
+        };
+        saveChatMessage(studentId, userMsg, contextData);
 
         try {
             const response = await fetch('http://localhost:8000/chat', {
@@ -479,15 +540,115 @@ const Solver = ({ activeChapter, setActiveChapter, clearChapter, studentId, libr
                 subject: activeChapter?.subject || 'General'
             });
 
-            setMessages(prev => [...prev, {
+            const botMsg: Message = {
                 role: 'bot',
                 content: data.answer,
                 citations: data.citations || [],
                 lang: data.detected_language
-            } as Message]);
+            };
+
+            setMessages(prev => [...prev, botMsg]);
+            saveChatMessage(studentId, botMsg, contextData);
+
         } catch (e) {
             setMessages(prev => [...prev, { role: 'bot', content: "Connection interrupted. Please verify that the local intelligence engine is active.", citations: [] } as Message]);
         } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleGenerateMindMap = async () => {
+        setIsMindMapLoading(true);
+        setShowMindMap(true); // Show modal immediately so user sees loading state
+        try {
+            const queryTopic = activeChapter?.title || selectedSubject || "Overview";
+            const response = await fetch('http://localhost:8000/mindmap', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    query: queryTopic,
+                    filename: activeChapter?.filename,
+                    subject: selectedSubject,
+                    grade: String(selectedGrade)
+                })
+            });
+            const data = await response.json();
+            setMindmapScript(data.mindmap);
+
+            // Save to DB
+            saveMindMap(studentId, data.mindmap, {
+                subject: selectedSubject || 'General',
+                grade: String(selectedGrade),
+                chapter: activeChapter?.title,
+                topic: queryTopic
+            });
+
+        } catch (e) {
+            console.error("MindMap failed:", e);
+        } finally {
+            setIsMindMapLoading(false);
+        }
+    };
+
+    const handleVisualSolve = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        setIsLoading(true);
+        const userMsg: Message = { role: 'user', content: `[Uploaded Image: ${file.name}]`, citations: [] };
+        setMessages(prev => [...prev, userMsg]);
+
+        const contextData = {
+            subject: selectedSubject || 'General',
+            grade: String(selectedGrade),
+            chapter: activeChapter?.title
+        };
+        saveChatMessage(studentId, userMsg, contextData);
+
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('grade', String(selectedGrade));
+        if (selectedSubject) formData.append('subject', selectedSubject);
+
+        try {
+            const response = await fetch('http://localhost:8000/visual-solve', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await response.json();
+
+            const botMsg: Message = {
+                role: 'bot',
+                content: data.solution,
+                citations: data.citations || []
+            };
+            setMessages(prev => [...prev, botMsg]);
+            saveChatMessage(studentId, botMsg, contextData);
+        } catch (e) {
+            setMessages(prev => [...prev, { role: 'bot', content: "Visual Intelligence engine is currently unresponsive.", citations: [] } as Message]);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleClearHistory = async () => {
+        if (confirm("Are you sure you want to clear this conversation history?")) {
+            setIsLoading(true);
+            if (activeChapter) {
+                await clearChatHistory(studentId, activeChapter.subject, activeChapter.title);
+                setMessages([{
+                    role: 'bot',
+                    content: `Focus Mode: ${activeChapter.title}. How can I assist you with this specific chapter?`,
+                    citations: []
+                }]);
+            } else if (selectedSubject) {
+                await clearChatHistory(studentId, selectedSubject, 'General');
+                setMessages([{
+                    role: 'bot',
+                    content: `Subject Mode: ${selectedSubject}. I'm searching across all chapters in this subject. Ask me anything!`,
+                    citations: []
+                }]);
+            }
             setIsLoading(false);
         }
     };
@@ -583,6 +744,20 @@ const Solver = ({ activeChapter, setActiveChapter, clearChapter, studentId, libr
                             Back to Subject View
                         </button>
                     )}
+                    <button
+                        onClick={handleClearHistory}
+                        className="p-2 bg-white/5 hover:bg-red-500/20 rounded-xl text-text-dim hover:text-red-400 transition-all border border-white/5"
+                        title="Clear Conversation History"
+                    >
+                        <Trash2 className="w-5 h-5" />
+                    </button>
+                    <button
+                        onClick={handleGenerateMindMap}
+                        className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] font-bold uppercase tracking-widest text-text-dim hover:text-white transition-all border border-white/5 flex items-center gap-2"
+                    >
+                        <Network className="w-3 h-3 text-accent" />
+                        Mind Map
+                    </button>
                 </div>
 
                 {/* Chapter Selection Dropdown Overlay */}
@@ -624,7 +799,31 @@ const Solver = ({ activeChapter, setActiveChapter, clearChapter, studentId, libr
                                 : "bg-accent/10 border border-accent/20 ml-auto"
                         )}
                     >
-                        <div className="text-sm leading-relaxed whitespace-pre-wrap">{m.content}</div>
+                        <div className="text-sm leading-relaxed">
+                            <ReactMarkdown
+                                remarkPlugins={[remarkGfm]}
+                                components={{
+                                    p: ({ children }) => <p className="mb-4 last:mb-0 text-gray-200">{children}</p>,
+                                    strong: ({ children }) => <strong className="font-bold text-white">{children}</strong>,
+                                    em: ({ children }) => <em className="italic text-indigo-300">{children}</em>,
+                                    h1: ({ children }) => <h1 className="text-2xl font-serif font-bold text-accent mb-4 mt-6 border-b border-white/10 pb-2">{children}</h1>,
+                                    h2: ({ children }) => <h2 className="text-xl font-serif font-bold text-accent/90 mb-3 mt-5">{children}</h2>,
+                                    h3: ({ children }) => <h3 className="text-lg font-serif font-bold text-white mb-2 mt-4">{children}</h3>,
+                                    ul: ({ children }) => <ul className="list-disc list-outside ml-6 mb-4 space-y-1 text-gray-300 marker:text-accent">{children}</ul>,
+                                    ol: ({ children }) => <ol className="list-decimal list-outside ml-6 mb-4 space-y-1 text-gray-300 marker:text-accent">{children}</ol>,
+                                    li: ({ children }) => <li className="pl-1">{children}</li>,
+                                    blockquote: ({ children }) => <blockquote className="border-l-4 border-accent pl-4 ml-0 my-4 italic text-gray-400 bg-white/5 py-2 pr-2 rounded-r">{children}</blockquote>,
+                                    code: ({ children }) => <code className="bg-black/30 text-accent font-mono text-xs px-1.5 py-0.5 rounded border border-white/10">{children}</code>,
+                                    pre: ({ children }) => <pre className="bg-black/30 p-4 rounded-xl overflow-x-auto my-4 border border-white/10 text-xs font-mono">{children}</pre>,
+                                    a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline decoration-accent/50 underline-offset-4 transition-all">{children}</a>,
+                                    table: ({ children }) => <div className="overflow-x-auto my-4 border border-white/10 rounded-lg"><table className="min-w-full divide-y divide-white/10 text-left text-xs bg-white/5">{children}</table></div>,
+                                    th: ({ children }) => <th className="px-3 py-2 bg-white/10 font-bold text-white uppercase tracking-wider">{children}</th>,
+                                    td: ({ children }) => <td className="px-3 py-2 border-t border-white/5 text-gray-300">{children}</td>,
+                                }}
+                            >
+                                {m.content}
+                            </ReactMarkdown>
+                        </div>
                         {m.role === 'bot' && m.citations && m.citations.length > 0 && (
                             <div className="mt-4 pt-4 border-t border-white/5 flex flex-wrap gap-2">
                                 {m.citations.map((c: any, ci: number) => (
@@ -635,8 +834,8 @@ const Solver = ({ activeChapter, setActiveChapter, clearChapter, studentId, libr
                             </div>
                         )}
                         <div className={cn(
-                            "absolute top-0 bottom-0 w-0.5 transition-transform duration-500 group-hover:scale-y-110",
-                            m.role === 'bot' ? "left-[-1px] bg-accent" : "right-[-1px] bg-accent"
+                            "absolute top-0 bottom-0 w-0.5 transition-opacity duration-500",
+                            m.role === 'bot' ? "left-0 bg-accent" : "right-0 bg-accent"
                         )} />
                     </motion.div>
                 ))}
@@ -647,23 +846,67 @@ const Solver = ({ activeChapter, setActiveChapter, clearChapter, studentId, libr
                 )}
             </div>
 
+            {/* Mind Map Overlay */}
+            <AnimatePresence>
+                {showMindMap && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-xl flex items-center justify-center p-8"
+                    >
+                        <div className="relative w-full max-w-6xl h-[80vh] premium-card p-12 overflow-hidden flex flex-col">
+                            <button
+                                onClick={() => setShowMindMap(false)}
+                                className="absolute top-8 right-8 p-3 hover:bg-white/10 rounded-full transition-colors z-20"
+                            >
+                                <X className="w-6 h-6" />
+                            </button>
+
+                            <div className="mb-8">
+                                <span className="section-label">Mastery Visualization</span>
+                                <h2 className="text-4xl font-serif">Concept Mind Map</h2>
+                            </div>
+
+                            <div className="flex-1 flex items-center justify-center overflow-auto no-scrollbar">
+                                {isMindMapLoading ? (
+                                    <div className="text-center space-y-4">
+                                        <div className="w-12 h-12 border-4 border-accent border-t-transparent rounded-full animate-spin mx-auto" />
+                                        <p className="text-text-dim text-sm animate-pulse">Architecting knowledge hierarchy...</p>
+                                    </div>
+                                ) : (
+                                    mindmapScript && <Mermaid chart={mindmapScript} />
+                                )}
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             <div className="mt-8 pt-8 border-t border-white/5">
                 <div className="relative group">
                     <input
-                        className="w-full bg-transparent border-b border-white/20 pb-4 text-xl font-light focus:outline-none focus:border-accent transition-colors placeholder:text-white/10"
+                        className="w-full bg-transparent border-b border-white/20 pb-4 pr-24 text-xl font-light focus:outline-none focus:border-accent transition-colors placeholder:text-white/10"
                         placeholder="Search textbook knowledge..."
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                         disabled={isLoading}
                     />
-                    <button
-                        onClick={handleSend}
-                        disabled={isLoading}
-                        className="absolute right-0 bottom-4 text-white hover:text-accent transition-colors disabled:opacity-30"
-                    >
-                        {isLoading ? "..." : <ArrowRight className="w-6 h-6 border p-1 rounded-full" />}
-                    </button>
+                    <div className="absolute right-0 bottom-4 flex items-center gap-4">
+                        <label className="cursor-pointer text-white/40 hover:text-white transition-colors duration-300 group/upload relative">
+                            <input type="file" className="hidden" accept="image/*" onChange={handleVisualSolve} disabled={isLoading} />
+                            <Camera className="w-6 h-6" />
+                            <span className="absolute -top-10 left-1/2 -translate-x-1/2 bg-white text-black text-[10px] font-bold px-2 py-1 rounded opacity-0 group-hover/upload:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">Visual Solve</span>
+                        </label>
+                        <button
+                            onClick={handleSend}
+                            disabled={isLoading}
+                            className="text-white hover:text-accent transition-colors disabled:opacity-30"
+                        >
+                            {isLoading ? "..." : <ArrowRight className="w-6 h-6 border p-1 rounded-full" />}
+                        </button>
+                    </div>
                 </div>
             </div>
         </motion.div>
@@ -754,7 +997,7 @@ const Library = ({ onSelectChapter, selectedGrade, setSelectedGrade, libraryData
                                     </span>
                                 </h3>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-                                    {subjectGroup.chapters.map((chapter) => {
+                                    {subjectGroup.chapters.map((chapter: any) => {
                                         const Icon = getSubjectIcon(subjectGroup.subject);
                                         const gradient = getSubjectGradient(subjectGroup.subject);
                                         return (
@@ -813,6 +1056,33 @@ const Assessment = ({ studentId, libraryData, selectedGrade }: {
     const [isChapterListOpen, setIsChapterListOpen] = useState(false);
     const [quizAnswers, setQuizAnswers] = useState<Record<number, string>>({});
     const [showResults, setShowResults] = useState(false);
+
+    const handleFinalize = async () => {
+        setShowResults(true);
+        const finalScore = (() => {
+            if (!assessment?.quiz) return 0;
+            let correct = 0;
+            assessment.quiz.forEach((q: any, i: number) => {
+                if (quizAnswers[i] === q.correct) correct++;
+            });
+            return Math.round((correct / assessment.quiz.length) * 100);
+        })();
+
+        await saveAssessmentResult(studentId, {
+            topic: assessment.topic || selectedSubject || "Assessment",
+            score: finalScore,
+            total: assessment.quiz.length,
+            answers: quizAnswers,
+            subject: selectedSubject || 'General'
+        });
+
+        // Also log the event
+        logProgress(studentId, 'assessment_done', {
+            score: finalScore,
+            topic: assessment.topic,
+            total: assessment.quiz.length
+        });
+    };
 
     const generateAssessment = async (topic?: string) => {
         setLoading(true);
@@ -1006,7 +1276,7 @@ const Assessment = ({ studentId, libraryData, selectedGrade }: {
                                 </div>
                                 {!showResults && Object.keys(quizAnswers).length === assessment.quiz.length && (
                                     <button
-                                        onClick={() => setShowResults(true)}
+                                        onClick={handleFinalize}
                                         className="px-12 py-4 bg-accent text-white rounded-2xl font-bold uppercase tracking-widest text-xs hover:scale-105 transition-transform"
                                     >
                                         Finalize Assessment
